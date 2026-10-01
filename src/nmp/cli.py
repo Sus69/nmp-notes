@@ -91,11 +91,6 @@ BOLD, DIM, REV, RESET = "\033[1m", "\033[2m", "\033[7m", "\033[0m"
 
 def _arrow_menu(slugs: List[str]) -> Optional[str]:
     """Arrow-key menu (up/down + Enter, number shortcut, type-to-filter, q to quit)."""
-    import termios
-    import tty
-
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
     idx, query = 0, ""
 
     def filtered() -> List[str]:
@@ -104,7 +99,7 @@ def _arrow_menu(slugs: List[str]) -> Optional[str]:
 
     def render(items: List[str]) -> None:
         # Full-screen redraw on alternate screen: no cursor math, no wrap bugs.
-        # NOTE: tty.setraw() disables ONLCR, so bare \n won't return the
+        # NOTE: raw mode disables ONLCR, so bare \n won't return the
         # carriage (staircase effect). Use \r\n for every line in here.
         NL = "\r\n"
         sys.stdout.write("\033[2J\033[H")
@@ -119,45 +114,93 @@ def _arrow_menu(slugs: List[str]) -> Optional[str]:
                 sys.stdout.write(f" {line}{NL}")
         sys.stdout.flush()
 
-    try:
-        tty.setraw(fd)
-        sys.stdout.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
-        sys.stdout.flush()
-        render(filtered())
-        while True:
-            ch = sys.stdin.read(1)
-            items = filtered()
-            if ch == "\x03":
-                return None
-            if ch.lower() == "q" and not query:
-                return None
-            if ch in ("\r", "\n"):
-                return items[idx] if items else None
-            if ch == "\x1b":  # arrows / esc
-                nxt = sys.stdin.read(2)
-                if nxt == "[A":
-                    idx = (idx - 1) % len(items)
-                elif nxt == "[B":
-                    idx = (idx + 1) % len(items)
-                else:  # lone Esc clears filter
+    if sys.platform == "win32":
+        import msvcrt
+        import os
+        os.system("")  # Enable ANSI terminal mode in Windows console
+        try:
+            sys.stdout.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
+            sys.stdout.flush()
+            render(filtered())
+            while True:
+                ch = msvcrt.getwch()
+                items = filtered()
+                if ch == "\x03":  # Ctrl+C
+                    return None
+                if ch.lower() == "q" and not query:
+                    return None
+                if ch in ("\r", "\n"):
+                    return items[idx] if items else None
+                if ch in ("\x00", "\xe0"):
+                    code = msvcrt.getwch()
+                    if code == "H":  # Up arrow
+                        idx = (idx - 1) % len(items)
+                    elif code == "P":  # Down arrow
+                        idx = (idx + 1) % len(items)
+                    render(filtered())
+                elif ch == "\x1b":  # Esc
                     query, idx = "", 0
-                render(filtered())
-            elif ch in ("\x7f", "\x08"):
-                query = query[:-1]
-                idx = 0
-                render(filtered())
-            elif ch.isdigit() and not query:
-                n = int(ch)
-                if 1 <= n <= len(items):
-                    return items[n - 1]
-            elif ch.isprintable():
-                query += ch
-                idx = 0
-                render(filtered())
-    finally:
-        sys.stdout.write("\033[?25h\033[?1049l")  # restore cursor + main screen
-        sys.stdout.flush()
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                    render(filtered())
+                elif ch in ("\x7f", "\x08"):
+                    query = query[:-1]
+                    idx = 0
+                    render(filtered())
+                elif ch.isdigit() and not query:
+                    n = int(ch)
+                    if 1 <= n <= len(items):
+                        return items[n - 1]
+                elif ch.isprintable():
+                    query += ch
+                    idx = 0
+                    render(filtered())
+        finally:
+            sys.stdout.write("\033[?25h\033[?1049l")  # restore cursor + main screen
+            sys.stdout.flush()
+    else:
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            sys.stdout.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
+            sys.stdout.flush()
+            render(filtered())
+            while True:
+                ch = sys.stdin.read(1)
+                items = filtered()
+                if ch == "\x03":
+                    return None
+                if ch.lower() == "q" and not query:
+                    return None
+                if ch in ("\r", "\n"):
+                    return items[idx] if items else None
+                if ch == "\x1b":  # arrows / esc
+                    nxt = sys.stdin.read(2)
+                    if nxt == "[A":
+                        idx = (idx - 1) % len(items)
+                    elif nxt == "[B":
+                        idx = (idx + 1) % len(items)
+                    else:  # lone Esc clears filter
+                        query, idx = "", 0
+                    render(filtered())
+                elif ch in ("\x7f", "\x08"):
+                    query = query[:-1]
+                    idx = 0
+                    render(filtered())
+                elif ch.isdigit() and not query:
+                    n = int(ch)
+                    if 1 <= n <= len(items):
+                        return items[n - 1]
+                elif ch.isprintable():
+                    query += ch
+                    idx = 0
+                    render(filtered())
+        finally:
+            sys.stdout.write("\033[?25h\033[?1049l")  # restore cursor + main screen
+            sys.stdout.flush()
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
 def interactive() -> int:

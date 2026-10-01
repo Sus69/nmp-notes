@@ -43,7 +43,7 @@ EXTRA_FILES: Dict[str, Tuple[str, ...]] = {
 
 
 def _read_template(filename: str) -> str:
-    return res.files("nmp").joinpath(f"templates/{filename}").read_text()
+    return res.files("nmp").joinpath(f"templates/{filename}").read_text(encoding="utf-8")
 
 
 def available_templates() -> List[str]:
@@ -100,12 +100,12 @@ def file(
             f"Target file already exists: '{dest_path}'. Use force=True (or answer y) to overwrite."
         )
 
-    dest_path.write_text(_read_template(template_file))
+    dest_path.write_text(_read_template(template_file), encoding="utf-8")
 
     for extra in EXTRA_FILES.get(slug, ()):
         extra_dest = dest_dir / extra
         if extra_dest.exists():
             continue  # never overwrite shared helper silently
-        extra_dest.write_text(_read_template(extra))
+        extra_dest.write_text(_read_template(extra), encoding="utf-8")
 
     return dest_path.resolve()

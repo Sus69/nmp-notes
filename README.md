@@ -11,6 +11,11 @@
 ## 📦 Installation
 
 ```bash
+pip install nmp-notes
+```
+
+Or from source:
+```bash
 git clone https://github.com/Sus69/nmp-notes.git
 cd nmp-notes
 pip install -e .

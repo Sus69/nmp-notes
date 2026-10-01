@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nmp-notes"
-version = "0.1.0"
+version = "0.2.0"
 description = "A CLI tool and Python library for generating prefilled practical lab files from templates."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -41,5 +41,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 nmp = [
+    "templates/*.py",
     "templates/**/*.py",
 ]
