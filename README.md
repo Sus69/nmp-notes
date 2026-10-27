@@ -31,7 +31,7 @@ pip install -e .
 nmp
 ```
 
-Shows an arrow-key menu (up/down + Enter, type-to-filter, `q` to quit). Pick one and its `.py` file is created in the current folder. Falls back to a numbered prompt when piped.
+Shows a numbered list; enter a number, a slug (`1a-bfs`), or a partial name (`bfs`) to create that practical's `.py` in the current folder. `q` quits. No raw mode or ANSI, so it works in any terminal (Windows, `dumb`, SSH, piped).
 
 ### 2. List practicals
 

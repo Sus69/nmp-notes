@@ -86,147 +86,51 @@ def handle_create(args: argparse.Namespace) -> int:
     return 0
 
 
-BOLD, DIM, REV, RESET = "\033[1m", "\033[2m", "\033[7m", "\033[0m"
-
-
-def _arrow_menu(slugs: List[str]) -> Optional[str]:
-    """Arrow-key menu (up/down + Enter, number shortcut, type-to-filter, q to quit)."""
-    idx, query = 0, ""
-
-    def filtered() -> List[str]:
-        q = query.lower()
-        return [s for s in slugs if q in s.lower() or q in PRACTICALS[s][0].lower()] or slugs
-
-    def render(items: List[str]) -> None:
-        # Full-screen redraw on alternate screen: no cursor math, no wrap bugs.
-        # NOTE: raw mode disables ONLCR, so bare \n won't return the
-        # carriage (staircase effect). Use \r\n for every line in here.
-        NL = "\r\n"
-        sys.stdout.write("\033[2J\033[H")
-        sys.stdout.write(f"{BOLD}College practicals{RESET}{DIM}  up/down navigate · type to filter · Enter to create · q to quit{RESET}{NL}{NL}")
-        if query:
-            sys.stdout.write(f"Filter: {BOLD}{query}{RESET}  {DIM}(esc clears){RESET}{NL}{NL}")
-        for i, s in enumerate(items):
-            line = f"  {i + 1}. {PRACTICALS[s][0]} {DIM}({s}){RESET}"
-            if i == idx:
-                sys.stdout.write(f"{REV}>{line}{RESET}{NL}")
-            else:
-                sys.stdout.write(f" {line}{NL}")
-        sys.stdout.flush()
-
-    if sys.platform == "win32":
-        import msvcrt
-        import os
-        os.system("")  # Enable ANSI terminal mode in Windows console
-        try:
-            sys.stdout.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
-            sys.stdout.flush()
-            render(filtered())
-            while True:
-                ch = msvcrt.getwch()
-                items = filtered()
-                if ch == "\x03":  # Ctrl+C
-                    return None
-                if ch.lower() == "q" and not query:
-                    return None
-                if ch in ("\r", "\n"):
-                    return items[idx] if items else None
-                if ch in ("\x00", "\xe0"):
-                    code = msvcrt.getwch()
-                    if code == "H":  # Up arrow
-                        idx = (idx - 1) % len(items)
-                    elif code == "P":  # Down arrow
-                        idx = (idx + 1) % len(items)
-                    render(filtered())
-                elif ch == "\x1b":  # Esc
-                    query, idx = "", 0
-                    render(filtered())
-                elif ch in ("\x7f", "\x08"):
-                    query = query[:-1]
-                    idx = 0
-                    render(filtered())
-                elif ch.isdigit() and not query:
-                    n = int(ch)
-                    if 1 <= n <= len(items):
-                        return items[n - 1]
-                elif ch.isprintable():
-                    query += ch
-                    idx = 0
-                    render(filtered())
-        finally:
-            sys.stdout.write("\033[?25h\033[?1049l")  # restore cursor + main screen
-            sys.stdout.flush()
-    else:
-        import termios
-        import tty
-
-        fd = sys.stdin.fileno()
-        old = termios.tcgetattr(fd)
-        try:
-            tty.setraw(fd)
-            sys.stdout.write("\033[?1049h\033[?25l")  # alt screen, hide cursor
-            sys.stdout.flush()
-            render(filtered())
-            while True:
-                ch = sys.stdin.read(1)
-                items = filtered()
-                if ch == "\x03":
-                    return None
-                if ch.lower() == "q" and not query:
-                    return None
-                if ch in ("\r", "\n"):
-                    return items[idx] if items else None
-                if ch == "\x1b":  # arrows / esc
-                    nxt = sys.stdin.read(2)
-                    if nxt == "[A":
-                        idx = (idx - 1) % len(items)
-                    elif nxt == "[B":
-                        idx = (idx + 1) % len(items)
-                    else:  # lone Esc clears filter
-                        query, idx = "", 0
-                    render(filtered())
-                elif ch in ("\x7f", "\x08"):
-                    query = query[:-1]
-                    idx = 0
-                    render(filtered())
-                elif ch.isdigit() and not query:
-                    n = int(ch)
-                    if 1 <= n <= len(items):
-                        return items[n - 1]
-                elif ch.isprintable():
-                    query += ch
-                    idx = 0
-                    render(filtered())
-        finally:
-            sys.stdout.write("\033[?25h\033[?1049l")  # restore cursor + main screen
-            sys.stdout.flush()
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+def _matches(slugs: List[str], choice: str) -> List[str]:
+    """Resolve a number, slug, or partial name to matching slugs."""
+    c = choice.strip().lower()
+    if c.isdigit():
+        n = int(c)
+        return [slugs[n - 1]] if 1 <= n <= len(slugs) else []
+    if c.endswith(".py"):
+        c = c[:-3]
+    if c in PRACTICALS:
+        return [c]
+    hits = [s for s in slugs if c and (c in s or c in PRACTICALS[s][0].lower())]
+    if len(hits) > 1:  # prefer a whole slug word: 'bfs' -> 1a-bfs, not 2b-rbfs
+        token_hits = [s for s in hits if c in s.split("-")]
+        if token_hits:
+            hits = token_hits
+    return hits
 
 
 def interactive() -> int:
-    """Numbered/arrow-key menu; writes the chosen practical into the cwd."""
+    """Plain numbered menu; writes the chosen practical into the cwd.
+
+    Cooked mode only (no raw mode / ANSI / alt screen) so it works on every
+    terminal, including Windows, dumb terms, SSH and piped stdin.
+    """
     slugs = list(PRACTICALS)
-    if sys.stdin.isatty():
+    width = len(str(len(slugs)))
+    print("College practicals\n")
+    for i, s in enumerate(slugs, 1):
+        print(f"{i:>{width}}. {PRACTICALS[s][0]} ({s})")
+    print()
+    while True:
         try:
-            slug = _arrow_menu(slugs)
-        except Exception:  # ponytail: no TTY/raw mode -> plain prompt fallback
-            slug = False
-            print("Fancy menu unavailable, using plain prompt.")
-        if slug:
-            return handle_create(argparse.Namespace(template=slug, output=None))
-        if slug is None:
-            print("Cancelled.")
-            return 1
-    for i, s in enumerate(slugs, 1):  # non-TTY fallback
-        print(f"{i}. {PRACTICALS[s][0]} ({s})")
-    try:
-        choice = input("Select number: ").strip()
-    except EOFError:
-        return 1
-    if not choice.isdigit() or not 1 <= int(choice) <= len(slugs):
-        print("Invalid choice.", file=sys.stderr)
-        return 1
-    return handle_create(argparse.Namespace(template=slugs[int(choice) - 1], output=None))
+            choice = input(f"Number or name (1-{len(slugs)}, q to quit): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+        if choice.lower() in ("q", "quit"):
+            return 0
+        hits = _matches(slugs, choice)
+        if len(hits) == 1:
+            return handle_create(argparse.Namespace(template=hits[0], output=None))
+        if hits:
+            print(f"Ambiguous: {', '.join(hits)} — be more specific.")
+        else:
+            print(f"No match for '{choice}'. Try a number 1-{len(slugs)} or a name like 'bfs'.")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
